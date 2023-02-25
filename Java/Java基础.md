@@ -796,11 +796,165 @@ JDK 自带的序列化方式一般不会用 ，因为序列化效率低并且存
 - **存在安全问题** ：序列化和反序列化本身并不存在问题。但当输入的反序列化的数据可被用户控制，那么攻击者即可通过构造恶意输入，让反序列化产生非预期的对象，在此过程中执行构造的任意代码。
 ## I/O
 ### Java IO 流了解吗？
+IO 即 Input/Output，输入和输出。数据输入到计算机内存的过程即输入，反之输出到外部存储（比如数据库，文件，远程主机）的过程即输出。
+
+数据传输过程类似于水流，因此称为 IO 流。IO 流在 Java 中分为输入流和输出流，而根据 **数据的处理方式** 又分为字节流和字符流。
+
+Java IO 流的 40 多个类都是从如下 4 个抽象类基类中派生出来的。
+- InputStream/Reader: 所有的输入流的基类，前者是字节输入流，后者是字符输入流。
+- OutputStream/Writer: 所有输出流的基类，前者是字节输出流，后者是字符输出流。
 
 ### I/O 流为什么要分为字节流和字符流呢?
+不管是文件读写还是网络发送接收，信息的最小存储单元都是字节。 那为什么 I/O 流操作要分为字节流操作和字符流操作呢？
+- 字符流是由 Java 虚拟机将字节转换得到的，这个过程还算是比较耗时；
+- 如果我们不知道编码类型的话，使用字节流的过程中很容易出现乱码问题。
 
+https://javaguide.cn/java/io/io-basis.html#inputstream-%E5%AD%97%E8%8A%82%E8%BE%93%E5%85%A5%E6%B5%81
+
+I/O 流就干脆提供了一个直接操作字符的接口，方便我们平时对字符进行流操作。**如果音频文件、图片等媒体文件用字节流比较好，如果涉及到字符的话使用字符流比较好。**
+
+### 几种字符编码 Unicode、utf-8、GBK
+字符流默认采用的是 `Unicode` 编码，我们可以通过构造方法自定义编码。
+
+顺便分享一下之前遇到的笔试题：常用字符编码所占字节数？utf8 :英文占 1 字节，中文占 3 字节，unicode：任何字符都占 2 个字节，gbk：英文占 1 字节，中文占 2 字节。
+### 缓冲流
+IO 操作是很消耗性能的，缓冲流将数据加载至缓冲区，一次性读取/写入多个字节，从而**避免频繁的 IO 操作**，提高流的传输效率。
+
+字节缓冲流这里采用了 **装饰器模式** 来增强 InputStream 和OutputStream子类对象的功能。
+### 打印流
+```java
+System.out.print("Hello！");
+System.out.println("Hello！");
+```
+System.out 实际是用于获取一个 PrintStream 对象，print方法实际调用的是 PrintStream 对象的 write 方法。
+
+PrintStream 属于字节打印流，与之对应的是 PrintWriter （字符打印流）。PrintStream 是 OutputStream 的子类，PrintWriter 是 Writer 的子类。
+### 随机访问流
+RandomAccessFile 比较常见的一个应用就是实现大文件的 断点续传 。何谓断点续传？简单来说就是上传文件中途暂停或失败（比如遇到网络问题）之后，不需要重新上传，只需要上传那些未成功上传的文件分片即可。分片（先将文件切分成多个文件分片）上传是断点续传的基础。
+
+RandomAccessFile 的实现依赖于 FileDescriptor (文件描述符) 和 FileChannel （内存映射文件）。
 ### Java IO 中的设计模式有哪些？
+装饰器模式、适配器模式、工厂模式、观察者模式
+#### 装饰器模式
+装饰器（Decorator）模式 可以在不改变原有对象的情况下拓展其功能。
 
+装饰器模式通过 **组合** 替代继承来扩展原始类的功能，在一些继承关系比较复杂的场景（IO 这一场景各种类的继承关系就比较复杂）更加实用。
+
+对于字节流来说， `FilterInputStream` （对应输入流）和`FilterOutputStream`（对应输出流）是装饰器模式的核心，分别用于增强 InputStream 和OutputStream子类对象的功能。
+
+我们常见的BufferedInputStream(字节缓冲输入流)、DataInputStream 等等都是FilterInputStream 的子类，BufferedOutputStream（字节缓冲输出流）、DataOutputStream等等都是FilterOutputStream的子类。
+
+举个例子，我们可以通过 BufferedInputStream（字节缓冲输入流）来增强 FileInputStream 的功能。
+
+BufferedInputStream 构造函数如下：
+```java
+public BufferedInputStream(InputStream in) {
+    this(in, DEFAULT_BUFFER_SIZE);
+}
+
+public BufferedInputStream(InputStream in, int size) {
+    super(in);
+    if (size <= 0) {
+        throw new IllegalArgumentException("Buffer size <= 0");
+    }
+    buf = new byte[size];
+}
+```
+BufferedInputStream 的构造函数其中的一个参数就是 InputStream 。
+
+**BufferedInputStream 代码示例：**
+```java
+try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream("input.txt"))) {
+    int content;
+    long skip = bis.skip(2);
+    while ((content = bis.read()) != -1) {
+        System.out.print((char) content);
+    }
+} catch (IOException e) {
+    e.printStackTrace();
+}
+```
+如果你对 IO 流比较熟悉的话，你会发现ZipInputStream 和ZipOutputStream 还可以分别增强 BufferedInputStream 和 BufferedOutputStream 的能力。
+```java
+BufferedInputStream bis = new BufferedInputStream(new FileInputStream(fileName));
+ZipInputStream zis = new ZipInputStream(bis);
+
+BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fileName));
+ZipOutputStream zipOut = new ZipOutputStream(bos);
+```
+ZipInputStream 和ZipOutputStream 分别继承自InflaterInputStream 和DeflaterOutputStream。
+
+```java
+public
+class InflaterInputStream extends FilterInputStream {
+}
+
+public
+class DeflaterOutputStream extends FilterOutputStream {
+}
+
+```
+这也是装饰器模式很重要的一个特征，那就是可以对原始类嵌套使用多个装饰器。
+
+为了实现这一效果，**装饰器类需要跟原始类继承相同的抽象类或者实现相同的接口**。上面介绍到的这些 IO 相关的装饰类和原始类共同的父类是 InputStream 和OutputStream。
+
+对于字符流来说，BufferedReader 可以用来增加 Reader （字符输入流）子类的功能，BufferedWriter 可以用来增加 Writer （字符输出流）子类的功能。
+#### 适配器模式
+适配器（Adapter Pattern）模式 主要用于接口互不兼容的类的协调工作，你可以将其联想到我们日常经常使用的电源适配器。
+
+适配器模式中存在被适配的对象或者类称为 适配者(Adaptee) ，作用于适配者的对象或者类称为适配器(Adapter) 。适配器分为对象适配器和类适配器。类适配器使用继承关系来实现，对象适配器使用组合关系来实现。
+
+IO 流中的字符流和字节流的接口不同，它们之间可以协调工作就是基于适配器模式来做的，更准确点来说是对象适配器。通过适配器，我们可以将字节流对象适配成一个字符流对象，这样我们可以直接通过字节流对象来读取或者写入字符数据。
+
+InputStreamReader 和 OutputStreamWriter 就是两个适配器(Adapter)， 同时，它们两个也是字节流和字符流之间的桥梁。InputStreamReader 使用 StreamDecoder （流解码器）对字节进行解码，实现字节流到字符流的转换， OutputStreamWriter 使用StreamEncoder（流编码器）对字符进行编码，实现字符流到字节流的转换。
+
+InputStream 和 OutputStream 的子类是被适配者， InputStreamReader 和 OutputStreamWriter是适配器。
+```java
+// InputStreamReader 是适配器，FileInputStream 是被适配的类
+InputStreamReader isr = new InputStreamReader(new FileInputStream(fileName), "UTF-8");
+// BufferedReader 增强 InputStreamReader 的功能（装饰器模式）
+BufferedReader bufferedReader = new BufferedReader(isr);
+```
+
+**适配器模式和装饰器模式有什么区别呢？**
+
+**装饰器模式** 更侧重于动态地增强原始类的功能，装饰器类需要跟原始类继承相同的抽象类或者实现相同的接口。并且，装饰器模式支持对原始类嵌套使用多个装饰器。
+
+**适配器模式** 更侧重于让接口不兼容而不能交互的类可以一起工作，当我们调用适配器对应的方法时，适配器内部会调用适配者类或者和适配类相关的类的方法，这个过程透明的。就比如说 StreamDecoder （流解码器）和StreamEncoder（流编码器）就是分别基于 InputStream 和 OutputStream 来获取 FileChannel对象并调用对应的 read 方法和 write 方法进行字节数据的读取和写入。
+#### 工厂模式
+
+#### 观察者模式
 ### BIO、NIO 和 AIO 的区别？
+#### 有哪些常见的 IO 模型?
+UNIX 系统下， IO 模型一共有 5 种： 同步阻塞 I/O、同步非阻塞 I/O、I/O 多路复用、信号驱动 I/O 和异步 I/O。
+#### BIO (Blocking I/O)
+BIO 属于同步阻塞 IO 模型 。
 
+同步阻塞 IO 模型中，应用程序发起 read 调用后，会一直阻塞，直到内核把数据拷贝到用户空间。
+[label](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/6a9e704af49b4380bb686f0c96d33b81~tplv-k3u1fbpfcp-watermark.image)
+在客户端连接数量不高的情况下，是没问题的。但是，当面对十万甚至百万级连接的时候，传统的 BIO 模型是无能为力的。因此，我们需要一种更高效的 I/O 处理模型来应对更高的并发量。
+#### NIO (Non-blocking/New I/O)
+Java 中的 NIO 可以看作是 I/O 多路复用模型。也有很多人认为，Java 中的 NIO 属于同步非阻塞 IO 模型。
+[label](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/bb174e22dbe04bb79fe3fc126aed0c61~tplv-k3u1fbpfcp-watermark.image)
+同步非阻塞 IO 模型中，应用程序会一直发起 read 调用，等待数据从内核空间拷贝到用户空间的这段时间里，线程依然是阻塞的，直到在内核把数据拷贝到用户空间。
+
+相比于同步阻塞 IO 模型，同步非阻塞 IO 模型确实有了很大改进。通过轮询操作，避免了一直阻塞。
+
+但是，这种 IO 模型同样存在问题：**应用程序不断进行 I/O 系统调用轮询数据是否已经准备好的过程是十分消耗 CPU 资源的。**
+[label](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/88ff862764024c3b8567367df11df6ab~tplv-k3u1fbpfcp-watermark.image)
+IO 多路复用模型中，线程首先发起 select 调用，询问内核数据是否准备就绪，等内核把数据准备好了，用户线程再发起 read 调用。read 调用的过程（数据从内核空间 -> 用户空间）还是阻塞的。
+
+**IO 多路复用模型，通过减少无效的系统调用，减少了对 CPU 资源的消耗。**
+
+Java 中的 NIO ，有一个非常重要的**选择器** ( Selector ) 的概念，也可以被称为 **多路复用器**。通过它，只需要一个线程便可以管理多个客户端连接。当客户端数据到了之后，才会为其服务。
+[label](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/0f483f2437ce4ecdb180134270a00144~tplv-k3u1fbpfcp-watermark.image)
+#### AIO (Asynchronous I/O)
+AIO 也就是 NIO 2。Java 7 中引入了 NIO 的改进版 NIO 2,它是异步 IO 模型。
+
+异步 IO 是基于事件和回调机制实现的，也就是应用操作之后会直接返回，不会堵塞在那里，当后台处理完成，操作系统会通知相应的线程进行后续的操作。
+[label](https://p1-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/3077e72a1af049559e81d18205b56fd7~tplv-k3u1fbpfcp-watermark.image)
+目前来说 AIO 的应用还不是很广泛。Netty 之前也尝试使用过 AIO，不过又放弃了。这是因为，Netty 使用了 AIO 之后，在 Linux 系统上的性能并没有多少提升。
+
+总结：
+![Alt text](https://images.xiaozhuanlan.com/photo/2020/33b193457c928ae02217480f994814b6.png)
 ## 语法糖
